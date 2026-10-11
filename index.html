@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101114">
+<title>Моя фотогалерея</title>
+<style>
+:root{color-scheme:dark;--bg:#101114;--panel:#1b1c22;--text:#f5f5f7;--muted:#a5a6ad;--line:#30313a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{padding:26px clamp(16px,4vw,48px);display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+h1{font-size:clamp(1.6rem,3vw,2.3rem);letter-spacing:-.04em;margin:0 0 5px}
+header p,.status{color:var(--muted);margin:0}
+main{padding:24px clamp(12px,3vw,36px) 48px}
+.status{font-size:.95rem;margin-bottom:18px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.tile{aspect-ratio:1/1;overflow:hidden;border:0;border-radius:12px;background:#202127;padding:0;cursor:pointer}
+.tile img{width:100%;height:100%;display:block;object-fit:cover;transition:transform .25s}
+.tile:hover img{transform:scale(1.045)}
+button:focus-visible{outline:3px solid #8b9cff;outline-offset:3px}
+.empty{min-height:35vh;display:grid;place-items:center;text-align:center;border:1px dashed #444653;border-radius:18px;padding:28px}
+.empty h2{margin:0 0 10px}.empty p{color:var(--muted);line-height:1.6;max-width:540px}
+.viewer{position:fixed;inset:0;z-index:10;background:rgba(0,0,0,.97);display:none;flex-direction:column}
+.viewer.open{display:flex}
+.viewer-top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;color:#ddd}
+.viewer-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.counter{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.close,.nav{border:1px solid #444653;color:white;background:#25262d;cursor:pointer;display:grid;place-items:center}
+.close{width:44px;height:44px;border-radius:12px;font-size:1.5rem;flex-shrink:0}
+.stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;gap:clamp(8px,2vw,28px);padding:0 12px 14px}
+.stage img{max-width:calc(100vw - 150px);max-height:calc(100vh - 100px);object-fit:contain;user-select:none}
+.nav{flex:0 0 auto;width:48px;height:48px;border-radius:50%;font-size:1.7rem}
+@media(max-width:600px){.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.tile{border-radius:7px}.stage{gap:5px;padding:0 5px 10px}.stage img{max-width:calc(100vw - 100px);max-height:calc(100vh - 90px)}.nav{width:38px;height:38px;font-size:1.35rem}}
+</style>
+</head>
+<body>
+<header><div><h1>Моя фотогалерея</h1><p>Колекція фотографій</p></div></header>
+<main>
+  <div id="status" class="status">Завантажую список фотографій…</div>
+  <section id="grid" class="grid" aria-label="Фотосітка"></section>
+  <section id="empty" class="empty" hidden><div><h2 id="emptyTitle">Фотографій поки немає</h2><p id="emptyText">Додай файли зображень до папки photos у своєму GitHub-репозиторії та переліч їх у файлі photos.json.</p></div></section>
+</main>
+<div id="viewer" class="viewer" role="dialog" aria-modal="true" aria-label="Перегляд фотографії">
+  <div class="viewer-top"><div id="viewerName" class="viewer-name"></div><div style="display:flex;align-items:center;gap:14px"><span id="counter" class="counter"></span><button id="closeBtn" class="close" aria-label="Закрити">×</button></div></div>
+  <div class="stage"><button id="prevBtn" class="nav" aria-label="Попереднє фото">‹</button><img id="largeImage" alt=""><button id="nextBtn" class="nav" aria-label="Наступне фото">›</button></div>
+</div>
+<script>
+const grid=document.getElementById('grid'),statusEl=document.getElementById('status'),empty=document.getElementById('empty');
+const viewer=document.getElementById('viewer'),largeImage=document.getElementById('largeImage'),viewerName=document.getElementById('viewerName'),counter=document.getElementById('counter');
+let photos=[],current=0;
+const supported=/\.(avif|bmp|gif|jpe?g|png|svg|webp)$/i;
+// Resolve paths relative to this site so GitHub project pages also work.
+const basePath = new URL('.', window.location.href);
+function photoUrl(path){return new URL('photos/'+path.split('/').map(encodeURIComponent).join('/'),basePath).href;}
+function showEmpty(title,text){empty.hidden=false;document.getElementById('emptyTitle').textContent=title;document.getElementById('emptyText').textContent=text;}
+async function init(){
+ try{
+  const response=await fetch(new URL('photos.json',basePath));
+  if(!response.ok)throw new Error('photos.json не знайдено');
+  const list=await response.json();
+  if(!Array.isArray(list))throw new Error('photos.json має містити список назв файлів');
+  photos=list.filter(name=>typeof name==='string'&&supported.test(name)&&!name.startsWith('/')&&!name.split('/').includes('..'));
+  if(!photos.length){statusEl.textContent='У списку поки немає фотографій.';showEmpty('Фотографій поки немає','Додай зображення до папки photos і впиши їхні назви у photos.json.');return;}
+  statusEl.textContent=`Фотографій: ${photos.length}`;
+  photos.forEach((name,index)=>{
+   const button=document.createElement('button');button.type='button';button.className='tile';button.setAttribute('aria-label',`Відкрити фото ${index+1}: ${name}`);
+   const img=document.createElement('img');img.src=photoUrl(name);img.alt=name;img.loading='lazy';
+   img.addEventListener('error',()=>{button.remove();statusEl.textContent='Деякі фото не вдалося завантажити. Перевір назви у photos.json і файли в папці photos.';});
+   button.append(img);button.addEventListener('click',()=>openPhoto(index));grid.append(button);
+  });
+ }catch(error){statusEl.textContent='Не вдалося завантажити список фотографій.';showEmpty('Перевір налаштування галереї','Переконайся, що photos.json лежить поруч з index.html і містить правильні назви файлів з папки photos.');}
+}
+function openPhoto(index){
+ if(!photos.length)return;
+ current=(index+photos.length)%photos.length;
+ largeImage.src=photoUrl(photos[current]);largeImage.alt=photos[current];
+ viewerName.textContent=photos[current];counter.textContent=`${current+1} / ${photos.length}`;
+ viewer.classList.add('open');document.body.style.overflow='hidden';document.getElementById('closeBtn').focus();
+}
+function closeViewer(){viewer.classList.remove('open');document.body.style.overflow='';}
+function move(step){openPhoto(current+step);}
+document.getElementById('prevBtn').addEventListener('click',()=>move(-1));
+document.getElementById('nextBtn').addEventListener('click',()=>move(1));
+document.getElementById('closeBtn').addEventListener('click',closeViewer);
+viewer.addEventListener('click',e=>{if(e.target===viewer)closeViewer();});
+document.addEventListener('keydown',e=>{if(!viewer.classList.contains('open'))return;if(e.key==='ArrowLeft')move(-1);if(e.key==='ArrowRight')move(1);if(e.key==='Escape')closeViewer();});
+init();
+</script>
+</body>
+</html>
