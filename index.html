@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Моя фотогалерея</title>
+<style>
+:root { color-scheme: dark; --bg:#101114; --panel:#191a20; --text:#f4f4f5; --muted:#a5a6ad; --accent:#8b9cff; }
+* { box-sizing:border-box; }
+body { margin:0; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--bg); color:var(--text); }
+header { padding:28px clamp(16px,4vw,48px) 20px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; border-bottom:1px solid #292a31; }
+h1 { margin:0 0 5px; font-size:clamp(1.5rem,3vw,2.2rem); letter-spacing:-.04em; }
+p { margin:0; color:var(--muted); }
+.controls { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+button,.folder-label { font:inherit; border:1px solid #444653; color:var(--text); background:var(--panel); border-radius:12px; padding:11px 15px; cursor:pointer; transition:background .15s, transform .15s; }
+button:hover,.folder-label:hover { background:#292b35; }
+button:active,.folder-label:active { transform:scale(.98); }
+input[type=file] { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
+main { padding:24px clamp(12px,3vw,36px) 48px; }
+.status { color:var(--muted); margin:0 0 18px; font-size:.95rem; }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px; }
+.tile { aspect-ratio:1/1; overflow:hidden; border-radius:12px; background:#202127; padding:0; border:0; position:relative; }
+.tile img { display:block; width:100%; height:100%; object-fit:cover; transition:transform .25s; }
+.tile:hover img { transform:scale(1.045); }
+.tile:focus-visible,button:focus-visible,.folder-label:focus-visible { outline:3px solid var(--accent); outline-offset:3px; }
+.empty { min-height:42vh; display:grid; place-items:center; text-align:center; border:1px dashed #444653; border-radius:18px; padding:28px; }
+.empty-inner { max-width:520px; }
+.empty h2 { margin:0 0 10px; }
+.empty p { line-height:1.6; margin-bottom:18px; }
+.viewer { position:fixed; inset:0; z-index:10; background:rgba(0,0,0,.96); display:none; flex-direction:column; }
+.viewer.open { display:flex; }
+.viewer-top { display:flex; justify-content:space-between; align-items:center; padding:14px 18px; gap:12px; color:#ddd; }
+.viewer-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.viewer-stage { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; gap:clamp(8px,2vw,28px); padding:0 12px 14px; }
+.viewer-stage img { max-width:calc(100vw - 150px); max-height:calc(100vh - 100px); object-fit:contain; user-select:none; }
+.nav { flex:0 0 auto; width:48px; height:48px; border-radius:50%; font-size:1.7rem; padding:0; display:grid; place-items:center; background:#25262d; }
+.close { font-size:1.4rem; width:44px; height:44px; padding:0; }
+.counter { color:var(--muted); font-variant-numeric:tabular-nums; }
+@media(max-width:600px) { .grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; } .tile { border-radius:7px; } .viewer-stage { gap:5px; padding:0 5px 10px; } .viewer-stage img { max-width:calc(100vw - 100px); max-height:calc(100vh - 90px); } .nav { width:38px;height:38px;font-size:1.35rem; } }
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Моя фотогалерея</h1><p>Усі фото в одному місці</p></div>
+  <div class="controls">
+    <label class="folder-label" for="folderInput">📁 Вибрати папку з фото</label>
+    <input id="folderInput" type="file" accept="image/*" webkitdirectory multiple>
+  </div>
+</header>
+<main>
+  <div id="status" class="status">Папку ще не вибрано.</div>
+  <section id="grid" class="grid" aria-label="Фотосітка"></section>
+  <section id="empty" class="empty">
+    <div class="empty-inner">
+      <h2>Почнімо з ваших фотографій</h2>
+      <p>Натисніть «Вибрати папку з фото» та виберіть папку. Галерея покаже зображення з неї у вигляді сітки. Фото залишаються на вашому пристрої — вони нікуди не завантажуються.</p>
+      <label class="folder-label" for="folderInput">Вибрати папку</label>
+    </div>
+  </section>
+</main>
+<div id="viewer" class="viewer" role="dialog" aria-modal="true" aria-label="Перегляд фотографії">
+  <div class="viewer-top">
+    <div class="viewer-name" id="viewerName"></div>
+    <div style="display:flex;align-items:center;gap:14px"><span class="counter" id="counter"></span><button class="close" id="closeBtn" aria-label="Закрити">×</button></div>
+  </div>
+  <div class="viewer-stage">
+    <button class="nav" id="prevBtn" aria-label="Попереднє фото">‹</button>
+    <img id="largeImage" alt="">
+    <button class="nav" id="nextBtn" aria-label="Наступне фото">›</button>
+  </div>
+</div>
+<script>
+const input = document.getElementById('folderInput');
+const grid = document.getElementById('grid');
+const empty = document.getElementById('empty');
+const status = document.getElementById('status');
+const viewer = document.getElementById('viewer');
+const largeImage = document.getElementById('largeImage');
+const viewerName = document.getElementById('viewerName');
+const counter = document.getElementById('counter');
+const imageExtensions = /\.(avif|bmp|gif|jpe?g|png|svg|webp|heic|heif)$/i;
+let photos = [];
+let current = 0;
+let objectUrls = [];
+
+input.addEventListener('change', () => {
+  objectUrls.forEach(URL.revokeObjectURL);
+  objectUrls = [];
+  photos = Array.from(input.files || [])
+    .filter(file => file.type.startsWith('image/') || imageExtensions.test(file.name))
+    .sort((a,b) => a.webkitRelativePath.localeCompare(b.webkitRelativePath, undefined, {numeric:true, sensitivity:'base'}));
+  grid.replaceChildren();
+  if (!photos.length) {
+    empty.hidden = false;
+    status.textContent = 'У вибраній папці не знайдено фотографій.';
+    return;
+  }
+  empty.hidden = true;
+  status.textContent = `Знайдено фото: ${photos.length}`;
+  photos.forEach((photo, index) => {
+    const url = URL.createObjectURL(photo);
+    objectUrls.push(url);
+    const button = document.createElement('button');
+    button.className = 'tile';
+    button.type = 'button';
+    button.setAttribute('aria-label', `Відкрити фото ${index + 1}: ${photo.name}`);
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = photo.name;
+    img.loading = 'lazy';
+    button.append(img);
+    button.addEventListener('click', () => openPhoto(index));
+    grid.append(button);
+  });
+});
+function openPhoto(index) {
+  if (!photos.length) return;
+  current = (index + photos.length) % photos.length;
+  const photo = photos[current];
+  largeImage.src = objectUrls[current];
+  largeImage.alt = photo.name;
+  viewerName.textContent = photo.webkitRelativePath || photo.name;
+  counter.textContent = `${current + 1} / ${photos.length}`;
+  viewer.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  document.getElementById('closeBtn').focus();
+}
+function closeViewer() {
+  viewer.classList.remove('open');
+  document.body.style.overflow = '';
+}
+function move(step) { openPhoto(current + step); }
+document.getElementById('prevBtn').addEventListener('click', () => move(-1));
+document.getElementById('nextBtn').addEventListener('click', () => move(1));
+document.getElementById('closeBtn').addEventListener('click', closeViewer);
+viewer.addEventListener('click', event => { if (event.target === viewer) closeViewer(); });
+document.addEventListener('keydown', event => {
+  if (!viewer.classList.contains('open')) return;
+  if (event.key === 'ArrowLeft') move(-1);
+  if (event.key === 'ArrowRight') move(1);
+  if (event.key === 'Escape') closeViewer();
+});
+</script>
+</body>
+</html>
